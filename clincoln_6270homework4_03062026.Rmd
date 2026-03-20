@@ -1,0 +1,583 @@
+---
+title: "VTPEH 6270 - HW 4"
+author: "Cameron Lincoln - cal386"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 1
+    number_sections: true
+    fig_caption: false
+  word_document:
+    toc: true
+    toc_depth: '1'
+editor_options:
+  chunk_output_type: console
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+# Objective and Approach
+
+## Specific Objective
+
+We will explore:
+
+-   Is there a decrease in **reported cases of elevated pediatric blood lead level** **(varA)** over **time in years** **(varB)** in Oneida, NY? *(27 words)*
+
+## Data Description
+
+*This section was adapted from my last homework submission*
+
+The following code documents the process of cleaning data to get Oneida County level data.
+
+```{r, results='hide'}
+
+# Set up the work directory,  
+
+setwd("/Users/clincoln/Desktop/vtpeh-6270")
+getwd()
+
+# then load some packages,
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(gtsummary)
+library(gt)
+library(viridis)
+library(patchwork)
+
+# store the data, and then ...
+data_lead <- 
+  read.csv(
+    "Childhood_Blood_Lead_Testing_and_Elevated_Incidence_by_Zip_Code__Beginning_2000_20260205.csv")
+
+# and then preview the data.
+head(data_lead)
+colnames(data_lead)
+summary(data_lead)
+
+# Some of these data are classed as integers, when they should be categories.
+data_lead$County.Code <- as.character(data_lead$County.Code)
+data_lead$Zip <- as.character(data_lead$Zip)
+
+# And vice-versa
+data_lead$Tests <- as.numeric(data_lead$Tests)
+data_lead$Less.than.5.mcg.dL <- as.numeric(data_lead$Less.than.5.mcg.dL)
+
+data_lead_tidy <- data_lead 
+
+data_lead_tidy <- data_lead %>%
+  select(-"Less.than.5.mcg.dL",
+         -"X5.10.mcg.dL",
+         -"X10...15.mcg.dL",
+         -"X15...mcg.dL",
+         -"County.Code")
+
+data_lead_tidy <- data_lead_tidy %>% 
+  rename("Total_Elevated_Blood_Levels" = "Total.Elevated.Blood.Levels.",
+         "New_Case_Percentage" = "Percent",
+         "Rate_per_1000" = "Rate.per.1.000",
+         "ZIP_Location" = "Zip.Code.Location",
+         "County_Location" = "County.Location")
+
+# I'm going to exclude the 0-data...
+table(data_lead_tidy$Rate_per_1000)
+
+non0rate_data <- data_lead_tidy[
+  data_lead_tidy$Rate_per_1000 > 0,]
+
+# and subset for Oneida County
+oneida_data <- non0rate_data[
+  non0rate_data$County == "Oneida",]
+
+# This should give our new dataset, specifically with ONEIDA level data.
+summary(oneida_data)
+table(oneida_data$Zip)
+
+# and remove old dfs
+rm(data_lead, data_lead_tidy, non0rate_data)
+```
+
+The following code will generate a table of variables, types, and classes for the `oneida_data`.
+
+```{r, results='asis'}
+
+# I have to make a new table with the data variables, types, and classes.
+
+data_lead_vars <- data.frame(
+  Variable = c("County", 
+               "Year",
+               "Zip",
+               "Tests",
+               "Total_Elevated_Blood_Levels",
+               "New_Case_Percentage",
+               "Rate_per_1000",
+               "ZIP_Location",
+               "County_Location"),
+  Type = c("Categorical",
+           "Discrete",
+           "Categorical",
+           "Discrete",
+           "Continuous",
+           "Continuous",
+           "Continuous",
+           "Categorical",
+           "Categorical"),
+  Class = c("Character",
+            "Integer",
+            "Character",
+            "Numeric",
+            "Integer",
+            "Numeric",
+            "Integer",
+            "Character",
+            "Character")
+)
+
+kbl(data_lead_vars[1:9,], booktabs = T,
+    caption = "Table with all the variables by their class and type") %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+# and get rid of it
+rm(data_lead_vars)
+```
+
+## **Data Visualization**
+
+```{r, results="hold"}
+
+# Generating a table
+
+na.omit(oneida_data) %>%
+  group_by(Zip) %>%
+  summarise(
+    median = median(Total_Elevated_Blood_Levels, na.rm = TRUE),
+    q1 = quantile(Total_Elevated_Blood_Levels, 0.25, na.rm = TRUE),
+    q3 = quantile(Total_Elevated_Blood_Levels, 0.75, na.rm = TRUE),
+    mean = mean(Total_Elevated_Blood_Levels, na.rm = TRUE),
+    sd = sd(Total_Elevated_Blood_Levels, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    `Median (Q1, Q3)` = sprintf(
+      "%.0f (%.0f, %.0f)",
+      round(median),
+      round(q1),
+      round(q3)
+    ),
+    `Mean (SD)` = sprintf(
+      "%.0f (%.0f)",
+      round(mean),
+      round(sd)
+    )
+  ) %>%
+  select(Zip, `Median (Q1, Q3)`, `Mean (SD)`) %>%
+   gt() %>%
+  tab_header(
+    title = md("**Annual Number of Elevated Pediatric Blood Lead Tests
+               Reported in Oneida County, NY
+               2000–2020**"),
+      subtitle = "ZIP Code summary statistics"
+  )
+
+# I thought really hard to figure out how to display my data, 
+# since originally the data overlay was hard to interpret. 
+# I decided to display this using three different variables: 
+# number of cases, by year and ZIP code
+
+
+# The county level data could be filtered even more to remove NAs
+
+oneida_tidy <- oneida_data %>%
+  filter(!is.na(Zip),
+         !is.na(Year),
+         !is.na(Total_Elevated_Blood_Levels))
+
+rm(oneida_data)
+
+p1 <- ggplot(oneida_tidy, aes(x = factor(Year),
+                      y = Zip,
+                      fill = Total_Elevated_Blood_Levels)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Total_Elevated_Blood_Levels,
+              color = Total_Elevated_Blood_Levels <
+                median(Total_Elevated_Blood_Levels)),
+          size = 3,
+          show.legend = FALSE) +
+  scale_color_manual(values = c("black", "white")) +
+  scale_fill_viridis(option = "C", name = "Cases") +
+  labs(
+    title = "Newly Diagnosed Pediatric Elevated Blood Lead Levels",
+    subtitle = "Oneida County, NY (2000–2020)",
+    x = "Year",
+    y = "ZIP Code"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+    axis.text.y = element_text(size = 9),
+    plot.title = element_text(face = "bold")
+  )
+
+p2 <- ggplot(oneida_tidy, aes(x = Year,
+                        y = Total_Elevated_Blood_Levels,
+                        group = Zip,
+                        color = Zip)) +
+  geom_line(alpha = 0.95, linewidth = 0.7) +
+  geom_point(size = 2) +
+  # Trend line with legend
+  geom_smooth(
+    data = subset(oneida_tidy, Year >= 2005),
+    aes(group = 1, linetype = "Trend (2005–2020)"),
+    method = "lm",
+    color = "black",
+    size = 0.7,
+    se = TRUE
+  ) +
+  scale_color_viridis_d(option = "C", name = "ZIP Code") +
+  scale_linetype_manual(name = "", values = "dashed") + 
+  labs(
+    title = "Newly Diagnosed Pediatric Elevated Blood Lead Levels",
+    subtitle = "Oneida County, NY (2000–2020)",
+    x = "Year",
+    y = "Number of New Cases"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold")
+  )
+
+p1 / p2
+
+```
+
+## **Description of Possible Relationship**
+
+Oneida County was selected due to the higher incidences shown in previous iterations of this data exploration. Based on the heatmap and line plot generated with subsetted data, graphics indicate visual differences in new cases of blood levels in children by year and ZIP code.
+
+In Oneida County, the number of cases is higher in 13501 (Utica, NY) than in other ZIP codes; this ZIP code experienced a peak in 2005 with 71 cases reported. There seems to be an overall downward trend in cases. One could use 2005 as a starting point, and map a negative linear relationship.
+
+## **Parameters of Interest**
+
+Using the instructions from this assignment, one can use this to simulate some level of data for pediatric blood lead cases in Oneida County, NY starting from 2005. We will start by identifying the slope of the trend line for all grouped ZIP codes, t = 2005-2020.
+
+```{r, results = 'hide'}
+
+# This chunk of code was partially created using gAI tools.
+
+trend_lm_2005 <- lm(Total_Elevated_Blood_Levels ~ Year,
+                    data = subset(oneida_tidy, Year >= 2005))
+summary(trend_lm_2005)
+
+rm(trend_lm_2005)
+```
+
+When graphing time (year) versus number of cases starting from 2005, we assign a best-fit curve's intercept as 35. After using summary statistics in R, we calculate a slope of -0.8210.
+
+In layperson terms, this slope can be viewed as an annual average decrease in the number of pediatric blood lead cases reported in Oneida County by 0.821 per year.
+
+With this, a mathematical relationship can be represented as the linear function $ax + b + \epsilon\ = y$, where $a = -0.821$, $b = 35$, and $\epsilon = noise$.
+
++-----------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| **Parameter**   | linear relationship $ax+b+\epsilon = y$                                                                                                                                                 |
++-----------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| **Symbols**     | -   $a = -0.821$                                                                                                                                                                        |
+|                 |                                                                                                                                                                                         |
+|                 | -   $b = 35$                                                                                                                                                                            |
+|                 |                                                                                                                                                                                         |
+|                 | -   $\epsilon = noise$                                                                                                                                                                  |
++-----------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| **Description** | -   $a$ represents the average number of elevated pediatric blood lead level cases per year for all ZIP codes within Oneida County, NY.                                                 |
+|                 |                                                                                                                                                                                         |
+|                 | -   $b$ is the starting value (y-intercept), assuming a downwards negative trends since 2005.                                                                                           |
+|                 |                                                                                                                                                                                         |
+|                 | -   $\epsilon$ is the expected noise due to potential confounding factors (e.g., weather, climate change, changes in standards and regulations around pediatric Pb level testing, etc.) |
++-----------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+# Simulation of data
+
+## Making the Simulation
+
+```{r, results= 'asis'}
+
+# This chunk of code was partially created using gAI tools.
+
+set.seed(123)
+
+years <- 2005:2020
+nn <- 50  
+intercept <- 35
+slope <- -0.821
+noise_sd <- 5
+
+
+# Repeat each year nn times
+initial_sim <- data.frame(
+  Year = rep(years, each = nn),   
+  Total_Elevated_Blood_Levels = NA
+)
+
+# Fill in values using for-loop
+for (i in 1:nrow(initial_sim)){
+  initial_sim$Total_Elevated_Blood_Levels[i] <- rnorm(
+    1,
+    mean = intercept + slope * (initial_sim$Year[i] - 2005),
+    sd = noise_sd
+  )
+}
+
+# Round and remove negative cases
+initial_sim$Total_Elevated_Blood_Levels <-
+  round(pmax(initial_sim$Total_Elevated_Blood_Levels, 0))
+
+# Check the result
+head(initial_sim)
+
+```
+
+## Output of our simulation
+
+```{r, results='asis'}
+
+# This chunk of code was partially created using gAI tools.
+
+# Load required packages
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+# Compute summary statistics and rename columns
+summary_stats_initial <- initial_sim %>%
+  group_by(Year) %>%
+  summarize(
+    Simulations = n(),
+    `Mean` = mean(Total_Elevated_Blood_Levels),
+    `SD` = sd(Total_Elevated_Blood_Levels),
+    `Min.` = min(Total_Elevated_Blood_Levels),
+    `Q1` = quantile(Total_Elevated_Blood_Levels, 0.25),
+    `Median` = median(Total_Elevated_Blood_Levels),
+    `Q3` = quantile(Total_Elevated_Blood_Levels, 0.75),
+    `Max.` = max(Total_Elevated_Blood_Levels)
+  ) %>%
+  ungroup() %>%
+  # Round all numeric columns to 1 decimal
+  mutate(across(where(is.numeric), ~ round(., 1)))
+
+# Display as a clean table with kableExtra
+summary_stats_initial %>%
+  kable(
+    caption = "Summary of Simulated Pediatric Blood Lead Cases in Oneida County, NY (2005–2020)",
+    align = "c"
+  ) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed")
+  )
+
+rm(summary_stats_initial)
+```
+
+## Simulation function
+
+The function representative of this simulation is `f_sim_lead`.
+
+```{r, results='asis'}
+
+# This chunk of code was partially created using gAI tools.
+
+f_sim_lead <- function(nn = 100, a = -0.821, b = 35, noise_sd = 5){
+  
+  # Create empty vectors to store results
+  Year <- NA
+  Cases <- NA
+  
+  # Loop over each simulated observation
+  for (i in 1:nn){
+    
+    # Pick a year randomly from 2005 to 2020
+    Year[i] <- sample(2005:2020, 1)
+    
+    # Linear trend: y = a*(Year-2005) + b
+    mean_cases <- a * (Year[i] - 2005) + b
+    
+    # Add random noise
+    Cases[i] <- rnorm(1, mean = mean_cases, sd = noise_sd)
+  }
+  
+  # Make sure Cases are not negative and round them
+  Cases <- round(pmax(Cases, 0))
+  
+  # Put results in a data frame
+  sim_data <- data.frame(
+    Year = Year,
+    Cases = Cases
+  )
+  
+  return(sim_data)
+}
+
+```
+
+## Simulation automation
+
+For these simulations, we will be selecting 10 slopes, equally equally distributed from -0.2 to -2.0. We will also be utilizing sample sizes from 33 to 60, since this fits within the range of the median amount of cases in Monroe County. Noise will be selected from $±$ 1, 5, and 10 cases a year. We should expect to have 10 x 10 x 3 = 300 simulations.
+
+```{r, results = 'hide'}
+# This chunk of code was partially created using gAI tools.
+
+# chosen simulation alterations
+A_vars_sim <-  seq(-0.2, -2.0, length.out = 10)
+nn_vars_sim <- seq(33, 60, 3)
+noise_vars_sim <- c(1, 5, 10)
+
+# Empty list to store outputs
+sim_results <- list()
+
+# Counter to track list position
+sim_counter <- 1
+
+for(a in A_vars_sim){
+  for(nn in nn_vars_sim){  
+    for(noise in noise_vars_sim){   
+      
+      # Run simulation
+      sim_data <- f_sim_lead(
+        nn = nn,
+        a = a,
+        b = 35,
+        noise_sd = noise
+      )
+      
+      # Summary statistics by year
+      summary_stats <- sim_data %>%
+        group_by(Year) %>%
+        summarize(
+          n = n(),
+          mean_cases = mean(Cases),
+          sd_cases = sd(Cases),
+          min_cases = min(Cases),
+          q1 = quantile(Cases, 0.25),
+          median_cases = median(Cases),
+          q3 = quantile(Cases, 0.75),
+          max_cases = max(Cases)
+        ) %>%
+        ungroup()
+      
+      # Store results
+      sim_results[[sim_counter]] <- list(
+        slope = a,
+        sample_size = nn,
+        noise = noise,
+        data = sim_data,
+        summary = summary_stats
+      )
+      
+      sim_counter <- sim_counter + 1
+    }
+  }
+}
+
+head(sim_results)
+
+
+```
+
+# Visualization
+
+```{r, results='asis'}
+
+# This chunk of code was partially created using gAI tools.
+
+all_summary_stats <- bind_rows(
+  lapply(sim_results, function(x){
+    
+    x$summary %>%
+      mutate(
+        slope = x$slope,
+        sample_size = x$sample_size,
+        noise = x$noise
+      )
+    
+  })
+)
+
+
+p3 <- ggplot(all_summary_stats,
+       aes(x = Year, y = mean_cases, group = slope, color = slope)) +
+  geom_line(alpha = 0.4, linewidth = 0.7) +
+  facet_grid(noise ~ sample_size) +
+  scale_color_viridis_c(option = "C", name = "Slope (Effect Size)") +
+  scale_x_continuous(breaks = seq(2005, 2020, by = 5)) +
+  labs(
+    title = "Simulation Results: Pediatric Blood Lead Cases",
+    subtitle = "Mean simulated cases by year across slope, sample size, and noise levels",
+    x = "Year",
+    y = "Mean Simulated Cases"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.spacing = unit(0.6, "lines"),
+    strip.text = element_text(face = "bold")
+  )
+
+
+p3
+
+# Refined, using gAI tools (for legibility)
+
+p4 <- ggplot(all_summary_stats,
+       aes(x = Year,
+           y = mean_cases,
+           group = interaction(slope, sample_size),
+           color = slope,
+           linewidth = sample_size)) +
+
+  geom_line(alpha = 0.7) +
+
+  facet_wrap(~ noise, nrow = 1) +
+
+  scale_color_viridis_c(option = "C", name = "Slope (Effect Size)") +
+
+  scale_linewidth(range = c(0.6, 2),
+                  name = "Sample Size") +
+
+  scale_x_continuous(breaks = seq(2005, 2020, by = 5)) +
+
+  labs(
+    title = "Simulation Results: Pediatric Blood Lead Cases",
+    subtitle = "Mean simulated cases by year across slope, sample size, and noise levels",
+    x = "Year",
+    y = "Mean Simulated Cases"
+  ) +
+
+  theme_minimal() +
+
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "right"
+  )
+
+p4
+```
+
+# Interpretation
+
+We can see with all of these simulations that the negative slope allows for our simulations to experience a downwards trend in cases over time; this is true for all simulations, however is more pronounced when the noise is lower. When the effect size is larger, which is negative, the fewer cases are detected sooner (than later).
+
+When looking at noise, we see that the larger the noise is, the more unpredictable our model becomes. While there is a general downwards trend, there are simulated data that show a slight increase in the amount of cases after 15 years when the noise parameter is high.
+
+# AI disclosure statement
+
+I used AI. I used ChatGPT to help troubleshoot and refine my R code, particularly for adjusting my ggplot2 visualization and filtering the simulation results for specific conditions (e.g., sample size, faceting, etc.). The AI was used primarily to debug and improve code that I had already written and to suggest small modifications to achieve the desired plot structure.
