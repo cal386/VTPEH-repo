@@ -70,19 +70,6 @@ install.packages(c("shiny", "leaflet", "tigris", "sf", "dplyr", "stringr"))
 
 ---
 
-## Repository Structure
-vtpeh-6270/
-├── prepare_data.R               # Data cleaning and aggregation script
-├── App-1/
-│   ├── app.R                    # Shiny application
-│   └── county_lead.rds          # Pre-cleaned county-level data
-├── Childhood_Blood_Lead_Testing_and_Elevated_Incidence_by_Zip_Code_
-│   _Beginning_2000_20260205.csv # Raw NYS DOH data (primary dataset)
-└── New_York_State_ZIP_Codes-County_FIPS_Cross-Reference_20260421.csv
-# FIPS crosswalk file
-
----
-
 ## Data Sources
 
 - **Primary dataset:** New York State Department of Health — Childhood Blood 
