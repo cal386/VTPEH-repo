@@ -1,4 +1,4 @@
-# VTPEH 6270 – XXX YYY
+# VTPEH 6270 
 
 This repository contains code and materials for VTPEH 6270 coursework. The 
 project examines the relationship between geography and pediatric blood lead 
