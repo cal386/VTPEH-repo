@@ -7,7 +7,7 @@ Shiny application.
 
 ## Author
 
-Cam Lincoln  
+Cam Lincoln, MPH '26  
 Contact: cal386@cornell.edu
 
 ---
