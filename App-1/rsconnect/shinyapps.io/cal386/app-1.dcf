@@ -1,0 +1,12 @@
+name: app-1
+title:
+username: cal386
+account: cal386
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17217838
+bundleId: 11898573
+url: https://cal386.shinyapps.io/app-1/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
