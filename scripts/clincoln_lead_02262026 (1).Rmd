@@ -1,0 +1,298 @@
+---
+title: "VTPEH 6105 - "
+author: "Cameron Lincoln - cal386"
+date: "`r Sys.Date()`"
+editor_options:
+  chunk_output_type: console
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 1
+    number_sections: true
+    fig_caption: no
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+## From the original instructions...
+
+`*This section is copy/pasted directly from the instructions*`
+
+This document is for instructions only. Please create your own R markdown document as a basis for the rest of the project. The document should respect the following criteria:
+
+-   Is a PDF.
+
+-   Include headers as relevant, and a table of content.
+
+-   Include all R code.
+
+-   Include all figures.
+
+-   Console output may or may not be printed, as relevant.
+
+-   Is understandable and pleasant to navigate (e.g., avoid printing full data set within the report).
+
+Variable selection, as well as any section of the report, can be revised as the project develops. The goal of this Check Point is to familiarize yourself with R markdown, and to start exploring your data set.
+
+## Data Set Selection
+
+`*This section is copy/pasted directly from the instructions*`
+
+You can work on either your own data set (e.g., APEx data), data obtained from colleagues, or publicly available data.
+
+-   Contains at least 2 numerical variables.
+
+-   Contains at least 2 categorical variables.
+
+-   Is accompanied by the appropriate documentation (i.e., you can explain all variables, including what they represent and in which unit they are reported).
+
+-   Can be used to address a specific question through the exploration of associations between variables (e.g., is variable A associated with variable B, with this association being biologically plausible), on any topic.
+
+Each student will use a unique set of variables. Several students may use the same source data set, but subset different variables to create unique project.
+
+# INTRODUCTION
+
+## Background
+
+**What is the motivation behind your interest in this data set, or what drove the project question?**
+
+I grew up in Long Beach, CA and later moved to Oakland, CA. Both areas are heavily impacted by the historic shipbuilding industry. At the time, many of the parts used were coated in lead paint. Furthermore, these areas still have risk of environmental lead contaminants in the soil. This exploration of the data can help us better understand how other states (in this case, NY) might have different distributions.
+
+**What is your project question?**
+
+Are there specific areas/regions of NYS that are likely to have more rates of childhood blood lead levels? If so, where are they clustered? How large is the difference in rates?
+
+**Please give an overview of the data set. This should include the source (authors or institution), study population, location and time period.**
+
+This data set is provided by the New York State Department of Health. Per state regulation, doctors are required to do blood level testing for all children at specific time intervals. This data includes all children tested for lead from 2000 to March 6, 2024. Important to note, this data does not include information from NYC.
+
+There are nullification qualifications to protect patient anonymity in cases where positive result/number of tests per Zip code is low. Tests are pulled by year, and are reported on the Zip code, geographic center, and county level.
+
+To see the more information about the data set, please visit the website provided: <https://health.data.ny.gov/Health/Childhood-Blood-Lead-Testing-and-Elevated-Incidenc/d54z-enu8/about_data>
+
+# Data Set Exploration
+
+Before we even start to look at relationships, we gotta load, clean, and subset the data.
+
+```{r, results='hide'}
+
+# First, let's set up the work directory and 
+
+setwd("/Users/clincoln/Desktop/vtpeh-6270")
+getwd()
+
+# In the background, let's load some packages
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+# make sure the data loads in correctly
+data_lead <- 
+  read.csv("Childhood_Blood_Lead_Testing_and_Elevated_Incidence_by_Zip_Code__Beginning_2000_20260205.csv")
+
+head(data_lead)
+colnames(data_lead)
+summary(data_lead)
+
+# Some of these data are classed as integers, when they should be categories
+data_lead$County.Code <- as.character(data_lead$County.Code)
+data_lead$Zip <- as.character(data_lead$Zip)
+
+# And vice-versa
+data_lead$Tests <- as.numeric(data_lead$Tests)
+data_lead$Less.than.5.mcg.dL <- as.numeric(data_lead$Less.than.5.mcg.dL)
+
+# And now, let's check!
+summary(data_lead)
+
+# It looks ... weird still. 
+# There are a few rows that the math doesn't quite make sense. For example:
+
+data_lead[15659,]
+
+```
+
+We know that for 2011 tests in Warren County (ZIP 15659), there were 55 tests done. Yet there are NAs in the blood mcg/dL level is reported; only the Total Elevated Blood Levels, percentage, and rate are provided. Because of this, we need to subset our data based on specific values.
+
+We're going to have to subset the data to use "workable" data. To get to the "usable" data frame, I'm going to start to rename my data columns to make it more intuitive to work with.
+
+```{r, results='hide'}
+# So from the data set, I want to use: county, county code, year, ZIP code, 
+# number of tests performed, percentage, and rate per 1,000
+# Before I go in and change the names, I'm going back to the data source to 
+# double check that my re-names are in alignment with the codebook.
+
+# Renaming all my columns to be consistent. NOTE: Percent needs to be 
+# "New_Case_Percentage," since these ONLY count newly diagnosed children who 
+# had a positive blood Pb level.
+
+data_lead_tidy <- data_lead 
+
+data_lead_tidy <- data_lead %>%
+  select(-"Less.than.5.mcg.dL", -"X5.10.mcg.dL",
+         -"X10...15.mcg.dL", -"X15...mcg.dL")
+
+data_lead_tidy <- data_lead_tidy %>% 
+  rename("County_Code" = "County.Code",
+         "Total_Elevated_Blood_Levels" = "Total.Elevated.Blood.Levels.",
+         "New_Case_Percentage" = "Percent",
+         "Rate_per_1000" = "Rate.per.1.000",
+         "ZIP_Location" = "Zip.Code.Location",
+         "County_Location" = "County.Location")
+
+# Thank god, this was painful lets do a summary!
+head(data_lead_tidy)
+summary(data_lead_tidy)
+
+# I have to make a new table with the data variables, types, and classes.
+str(data_lead_tidy)
+data_lead_vars <- data.frame(
+  Variable = c("County", 
+               "County_Code",
+               "Year",
+               "Zip",
+               "Tests",
+               "Total_Elevated_Blood_Levels",
+               "New_Case_Percentage",
+               "Rate_per_1000",
+               "ZIP_Location",
+               "County_Location"),
+  Type = c("Categorical",
+           "Categorical",
+           "Discrete",
+           "Categorical",
+           "Discrete",
+           "Continuous",
+           "Continuous",
+           "Continuous",
+           "Categorical",
+           "Categorical"),
+  Class = c("Character",
+            "Character",
+            "Integer",
+            "Character",
+            "Numeric",
+            "Integer",
+            "Numeric",
+            "Integer",
+            "Character",
+            "Character")
+)
+```
+
+```{r, results='asis'}
+# And this should show my table
+kbl(data_lead_tidy[1:5,], booktabs = T,
+caption = "A preview of the data that I have cleaned.
+      Note that this is only the first 5 responses.") %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+kbl(data_lead_vars[1:10,], booktabs = T,
+    caption = "Table with all the variables by their class and type") %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+```
+
+# Data Visulization
+
+Doing the histogram part!
+
+```{r, results='hide'}
+# The first time I made this histogram, I had a lot of 0 values that was skewing 
+# my data. I'm going to need a subset that excludes this.
+table(data_lead_tidy$Rate_per_1000)
+
+# Subset for non-0 data
+non0rate_data <- data_lead_tidy[
+  data_lead_tidy$Rate_per_1000 > 0,]
+
+table(non0rate_data$Rate_per_1000)
+
+# First let's get the stats
+histomin <- min(na.omit(non0rate_data$Rate_per_1000))
+histomax <- max(na.omit(non0rate_data$Rate_per_1000))
+mean_val   <- mean(non0rate_data$Rate_per_1000, na.rm = TRUE)
+median_val <- median(non0rate_data$Rate_per_1000, na.rm = TRUE)
+
+# plot it with the mean and median dashed lines
+ggplot(non0rate_data, mapping = aes(x = Rate_per_1000))+
+  geom_histogram(color ="black", fill= "white")+
+  scale_x_continuous(breaks = seq(0,histomax, 100))+
+  scale_y_continuous(breaks = seq(0,400, by =100))+
+  geom_vline(aes(xintercept = mean_val, color = "Mean"),
+             linewidth = 0.8, linetype = "solid")+
+  geom_vline(aes(xintercept = median_val, color = "Median"),
+             linewidth = 0.8, linetype = "dashed")+
+  scale_color_manual(name = "Statistics",
+                     values = c("Mean" = "green", "Median" = "orange"))+
+  labs(title = "Newly Diagnosed Pediatric Lead Blood Cases in New York State",
+       subtitle ="Combined 2000-2020, excluding 0 and empty values",
+       x = "Rate per 1,000")+
+  theme_light()
+
+
+# I feel like this could be better displayed as a set of density ridges
+library(ggridges)
+ggplot(non0rate_data, mapping = aes(x = Rate_per_1000,
+                                    y = Year,
+                                    group = Year,
+                                    fill = Year))+
+  geom_density_ridges()+
+  scale_x_continuous(breaks = seq(0,histomax, 100))+
+  scale_y_continuous(breaks = seq(2000,2020, by =2))+
+  geom_vline(aes(xintercept = mean_val, color = "Mean"),
+             linewidth = 0.8, linetype = "solid")+
+  geom_vline(aes(xintercept = median_val, color = "Median"),
+             linewidth = 0.8, linetype = "dashed")+
+  scale_color_manual(name = "Statistics",
+                     values = c("Mean" = "green", "Median" = "orange"))+
+  labs(title = 
+         "Newly Diagnosed Pediatric Lead Blood Cases in New York State (by year)",
+       subtitle =
+         "Excluding 0 and empty values",
+       x = 
+         "Rate per 1,000")+
+  theme_ridges()
+
+
+```
+
+Now we can do a scatter plot
+```{r, results='hide'}
+
+ggplot(non0rate_data, mapping = aes(x = County,
+                                    y = Total_Elevated_Blood_Levels))+
+  geom_point(alpha = 0.5, color ="black", size= 2)+
+  scale_y_continuous()+
+  labs(title = "Newly Diagnosed Pediatric Lead Blood Level in New York State",
+       subtitle ="Combined 2000-2020, Excluding 0 and empty values",
+       x = "Counties",
+       y = "Cases reported")+
+  theme_light()+
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))
+
+# And as a facet?
+ggplot(non0rate_data, mapping = aes(x = Year, y = Total_Elevated_Blood_Levels))+
+  geom_point(alpha = 0.3, color ="red", size= 1)+
+  scale_y_continuous(breaks = seq(0,80, by =40))+
+  labs(title = "Newly Diagnosed Pediatric Lead Blood Level in New York State",
+       subtitle ="Excluding 0 and empty values",
+       x = "Years",
+       y = "Cases reported")+
+  theme_linedraw()+
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))+
+  facet_wrap(County ~., ncol = 8)
+
+```
+
+# AI Disclosure 
+In a bout of frustration, I did use ChatGPT to try to troubleshoot some issues. It did not work, so I stopped using it.
+
+I'm going to be really honest, using gAI makes things worse for me. I don't feel like a confident coder when I use it--that's why I always try to do things using my brain first. Not only did gAI tools generated buggy code, it often broke my R and made me restart all over again. All other resources I used were talking with other people about my code, using R online-textbooks, and trying to see if other people had similar issues on stackoverflow.
+
+
