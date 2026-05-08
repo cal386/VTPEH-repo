@@ -1,0 +1,359 @@
+---
+title: "Pediatric lead testing disparities in New York State"
+subtitle: "A retrospective analysis using biostatistic principles in R" 
+author: "Cameron Lincoln - cal386"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 1
+    number_sections: true
+    fig_caption: false
+  word_document:
+    toc: true
+    toc_depth: '1'
+editor_options:
+  chunk_output_type: console
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+# Introduction
+
+## Scientific Plausibility, Context, and Research Question
+
+Throughout several US regions and states, public health campaigns ensure that children are routinely screened for blood lead levels. Due to a variety of social, environmental, and economic factors, children of historically marginalized communities are at higher risk of lead exposure, which can lead to adverse developmental health impacts.^1^ Several states have internal guidelines and requirements on blood lead testing for children. In the state of New York, all children are expected to undergo regular checkups to screen for elevated blood lead testing.^2^ These guidelines are subject to political or administrative instability, and may change frequently. For New York, medical providers had different testing requirements as of 2019, and property rental registry laws were updated in 2025.^2^ On the national level, there have been efforts to improve drinking water via the 2021 Infrastructure Investment and Jobs Act.^3^ However, these waterline projects are managed by individual states to determine what projects are prioritized.^3^ As such, there is no suggested guideline to systematically address disparities in lead exposure in water ways, leading to inconsistencies across state lines.For New York State, municipalities with high populations of people of color and lower incomes are likely to be prioritized by the lead service line replacement program, as these individuals may be more at risk for blood lead levels.^3^
+
+This analysis hopes to establish a link between geography and blood lead levels in children across New York State. It will explore if changes are observed in **reported positive cases of elevated pediatric blood lead level** **(varA)** over **time in years** **(varB)** across **different counties of New York State, excluding New York City (varC).**
+
+# Methods
+
+This analysis will hinge on data gathered by the New York State Department of Health (NYSDOH). Per state regulation, doctors are required to do blood level testing for all children at specific time intervals. This data includes all children tested for lead from 2000 to March 6, 2024. Data was merged with Federal Information Processing Standards (FIPS) codes by ZIP code and county for generating visuals.
+
+## Important considerations about data quality
+
+This data set does not include tests from NYC. Furthermore, this data set only captures individuals who reported to clinics in New York State; should an individual not have health insurance, seek care outside of New York, or forgo routine checkups altogether, this data set will not capture these children. Therefore, it should be understood that the data presented by NYSDOH is likely an underestimate of the true count of pediatric lead cases.
+
+This data set presents nullification criterium to protect patient anonymity in cases where positive result/number of tests can identify individuals in low population areas. Tests are pooled by year, and are reported by ZIP code, geographic center, and county level. No demographics information was gathered. This data identifies the patient by testing ZIP code/county, not the patient's home location. This provides a level of uncertainty of the data in cases where patients seek out testing outside of their regular ZIP code, county, and/or state residence.
+
+## Accessing the data
+
+To see the more information about the data set from the publisher, please visit the website provided: [at the NYDOH website.](https://health.data.ny.gov/Health/Childhood-Blood-Lead-Testing-and-Elevated-Incidenc/d54z-enu8/about_data){.uri} This data can be downloaded at [the following GitHub repository folder.](https://github.com/cal386/VTPEH-repo/tree/main/data)
+
+The following details the process of identifying variables for this analysis:
+
+```{r, results='hide'}
+
+# Set up
+
+setwd("/Users/clincoln/Desktop/vtpeh-6270")
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(gtsummary)
+data_lead <- 
+  read.csv(
+    "Childhood_Blood_Lead_Testing_and_Elevated_Incidence_by_Zip_Code__Beginning_2000_20260205.csv")
+
+# Data previewing
+head(data_lead)
+colnames(data_lead)
+summary(data_lead)
+
+# Data cleaning
+data_lead$County.Code <- as.character(data_lead$County.Code)
+data_lead$Zip <- as.character(data_lead$Zip)
+data_lead$Tests <- as.numeric(data_lead$Tests)
+data_lead$Less.than.5.mcg.dL <- as.numeric(data_lead$Less.than.5.mcg.dL)
+
+# So from the data set, I want to use: county, county code, year, ZIP code, 
+# number of tests performed, percentage, and rate per 1,000
+# Before I go in and change the names, I'm going back to the data source to 
+# double check that my re-names are in alignment with the codebook.
+
+# Renaming all my columns to be consistent. NOTE: Percent needs to be 
+# "New_Case_Percentage," since these ONLY count newly diagnosed children who 
+# had a positive blood Pb level.
+
+data_lead_tidy <- data_lead 
+data_lead_tidy <- data_lead %>%
+  select(-"Less.than.5.mcg.dL", -"X5.10.mcg.dL",
+         -"X10...15.mcg.dL", -"X15...mcg.dL")
+
+data_lead_tidy <- data_lead_tidy %>% 
+  rename("County_Code" = "County.Code",
+         "Total_Elevated_Blood_Levels" = "Total.Elevated.Blood.Levels.",
+         "New_Case_Percentage" = "Percent",
+         "Rate_per_1000" = "Rate.per.1.000",
+         "ZIP_Location" = "Zip.Code.Location",
+         "County_Location" = "County.Location")
+
+# I'm going to exclude the 0-data
+table(data_lead_tidy$Rate_per_1000)
+non0rate_data <- data_lead_tidy[
+  data_lead_tidy$Rate_per_1000 > 0,]
+table(non0rate_data$Rate_per_1000)
+
+# This should give us a much cleaner data set.
+head(non0rate_data)
+summary(non0rate_data)
+
+```
+
+The following code will generate a table of the variables used in this data set:
+
+```{r, results='asis'}
+
+data_lead_vars <- data.frame(
+  Variable = c("County", 
+               "County_Code",
+               "Year",
+               "Zip",
+               "Tests",
+               "Total_Elevated_Blood_Levels",
+               "New_Case_Percentage",
+               "Rate_per_1000",
+               "ZIP_Location",
+               "County_Location"),
+  Type = c("Categorical",
+           "Categorical",
+           "Discrete",
+           "Categorical",
+           "Discrete",
+           "Continuous",
+           "Continuous",
+           "Continuous",
+           "Categorical",
+           "Categorical"),
+  Class = c("Character",
+            "Character",
+            "Integer",
+            "Character",
+            "Numeric",
+            "Integer",
+            "Numeric",
+            "Integer",
+            "Character",
+            "Character")
+)
+
+kbl(data_lead_vars[1:10,], booktabs = T,
+    caption = "Table with all the variables by their class and type") %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+
+```
+
+Here, there are both categorical and continuous variables of interest. To answer the questions set out in the introduction, the following variables were selected:
+
+-   **County**, a categorical variable with 57 unique counties within New York State, excluding New York City
+
+-   **Year,** a discrete variable from any test/value that occurred within January 1 to December 31 of each time interval.
+
+-   **Total_Elevated_Blood_Levels,** a discrete variable with the number of individuals who tested positive for elevated blood levels.
+
+-   **Tests**, a discrete variable with the number of individuals who tested for lead (per county)
+
+-   **Rate_per_1000,** a continuous variable defined per 1,000 cases (within each year/county/etc.). This was calculated by dividing `Total_Elevated_Blood_Levels` by `Test`. This was selected in order to compare across different counties, these rates may bias towards larger counties with more capacity to test.
+
+# Results
+
+The following details the data analysis from the full data comparing `Year`, `County`, and `Rate_per_1000`.
+
+## Graphics
+
+The following code will generate scatter plots with jitter to display the spread of data by county, year, and number of cases. This data will also generate a table of values displaying the median rate, IQR, and number of within group observations.
+
+```{r,results='asis', fig.width=6, fig.height=10}
+
+# Summary statistics by county
+library(forcats)
+county_summary <- non0rate_data |>
+  group_by(County) |>
+  summarise(
+    median_rate = median(Rate_per_1000, na.rm = TRUE),
+    q25         = quantile(Rate_per_1000, 0.25, na.rm = TRUE),
+    q75         = quantile(Rate_per_1000, 0.75, na.rm = TRUE),
+    n_obs       = n(),
+    .groups     = "drop"
+  ) |>
+  arrange(median_rate) |>
+  mutate(County = fct_inorder(County))
+
+county_summary |>
+  mutate(
+    median_rate = round(median_rate, 1),
+    q25         = round(q25, 1),
+    q75         = round(q75, 1),
+    IQR         = paste0(q25, "-", q75)   # collapse Q1/Q3 into one column
+  ) |>
+  select(County, median_rate, IQR, n_obs) |>
+  kable(
+    format  = "latex",
+    booktabs = TRUE,
+    longtable = TRUE,               # allows table to span multiple pages
+    col.names = c("County", "Median Rate (per 1,000)",
+                  "IQR (Q1-Q3)", "Observations (n)"),
+    caption = "Summary of blood lead rates per 1,000 by county, ordered by median rate",
+    align   = c("l", "c", "c", "c")
+  ) |>
+  kable_styling(
+    latex_options = c("striped", "hold_position", "repeat_header"),
+    font_size     = 9                # smaller font keeps 50+ rows manageable
+  )
+
+# scatter plot per county
+ggplot(county_summary,
+       aes(x = median_rate, y = County)) +
+  geom_jitter(
+    data   = non0rate_data |>
+               mutate(County = factor(County, levels = levels(county_summary$County))),
+    aes(x = Rate_per_1000, y = County),
+    width  = 0, height = 0.2,
+    colour = "#378ADD", alpha = 0.6, size = 0.4,
+    inherit.aes = FALSE
+  ) +
+  geom_errorbarh(
+    aes(xmin = q25, xmax = q75),
+    height = 0.4, colour = "#185FA5", linewidth = 0.6
+  ) +
+  geom_point(
+    aes(size = n_obs),
+    colour = "#185FA5", alpha = 0.85
+  ) +
+  scale_size_continuous(
+    name   = "Observations (n)",
+    range  = c(1.5, 6),
+    labels = scales::comma,
+    guide = "none"
+  ) +
+  labs(
+    title    = "Median blood lead rate per 1,000 by county",
+    subtitle = "Bars show IQR (Q1-Q3); point size reflects n; dots are individual ZIP-year observations",
+    x        = "Rate per 1,000",
+    y        = NULL
+  ) +
+  theme_bw(base_size = 11) +
+  theme(
+    panel.grid.major.y = element_line(linewidth = 0.3),
+    panel.grid.major.x = element_line(linewidth = 0.3),
+    panel.grid.minor   = element_blank(),
+    legend.position    = "bottom"
+  )
+```
+
+# Statistical analysis and discussion
+
+The following details the process of analyzing the data by checking for assumptions. Data was filtered to exclude observations with zero cases reported, as this could reduce ambiguity in the analysis. Counties/ZIP codes with `NA` or "zero" values could be attributed to a lack of testing being performed or no lead being detected.
+
+Normality of the rate per 1,000 cases (`Rate_per_1000`) was assessed using a Kolmogorov-Smirnov test, since the number of observations (n = 7,757) is over the Shapiro-Wilks limit of 5,000 observations. A significantly significant result (D = 0.1409, p \< 0.001) indicates that normality can not be assumed. Therefore, non-parametric tests were selected moving forward.
+
+To analyze differences across counties, a Kruskal-Wallis test was selected since it aligned with the assumptions made (non-parametric, independence, spread/distribution is similar between groups). Dunn's post-hoc comparisons were used to compare across different counties, using the BH correction to control for larger county sizes. The Kruskal-Wallis test indicated a statistically significant difference in pediatric lead exposure cases per 1,000 across different counties (H(36) = 432.519, p \< 0.01). This suggests that geographic location could be associated with the burden of lead exposure within New York State (excluding New York City).
+
+After doing the pairwise post-hoc test, several significant pairwise county differences were noted, with all pairwise values reporting a p \< 0.05. However, effect size estimation was relatively small ($\varepsilon^2$ = 0.056), suggesting that while differences are statistically significant, differences by county only account for about 5% of the differences; there may be other confounding variables or better predictors (e.g., sample size, number of tests, etc.) that might better correlate with cases of pediatric lead levels. Because of this, the statistical utility of this analysis is heavily limited, and only should be used to draw qualitative conclusions.
+
+```{r, results = 'asis'}
+
+library(dunn.test)
+
+# Checking for normality
+# because n = 7,757 Shapiro-Wilk's limit of 5,000, so we use the
+# Kolmogorov-Smirnov test instead. 
+
+ks_result <- ks.test(
+  non0rate_data$Rate_per_1000,
+  "pnorm",
+  mean = mean(non0rate_data$Rate_per_1000, na.rm = TRUE),
+  sd   = sd(non0rate_data$Rate_per_1000,   na.rm = TRUE)
+)
+
+cat("Kolmogorov-Smirnov normality test\n",
+    "D =",       round(ks_result$statistic, 4),
+    "\np-value =", round(ks_result$p.value,    4), "\n\n")
+
+# Kruskal-Wallis test
+
+kw_result <- kruskal.test(Rate_per_1000 ~ County,
+                            data = non0rate_data)
+
+cat("Kruskal-Wallis test\n",
+    "H =",       round(kw_result$statistic, 3),
+    "\ndf =",      kw_result$parameter,
+    "\np-value =", round(kw_result$p.value,    4), "\n\n")
+
+#  Dunn's post-hoc test 
+# Performs pairwise comparisons between counties.
+
+if (kw_result$p.value < 0.05) {
+
+  dunn_result <- dunn.test(
+    x      = non0rate_data$Rate_per_1000,
+    g      = non0rate_data$County,
+    method = "bh",
+    alph   = 0.05,
+    label  = TRUE
+  )
+
+  # Put into a tibble for making it easy for me to read
+  dunn_tidy <- tibble(
+    comparison  = dunn_result$comparisons,
+    Z           = round(dunn_result$Z,           3),
+    p_adjusted  = round(dunn_result$P.adjusted,   4),
+    significant = ifelse(dunn_result$P.adjusted < 0.05, "Yes", "No")
+  ) |>
+    arrange(p_adjusted) |>
+    filter(significant == "Yes")
+
+  # kable
+  dunn_tidy |>
+    kable(
+      format    = "latex",
+      booktabs  = TRUE,
+      longtable = TRUE,
+      col.names = c("Comparison", "Z statistic",
+                    "Adjusted p-value", "Significant"),
+      caption   = "Dunn post-hoc test: significant county pairs (BH-corrected)"
+    ) |>
+    kable_styling(
+      latex_options = c("striped", "hold_position", "repeat_header"),
+      font_size     = 9
+    )
+
+} else {
+  cat("KW test was not significant (p >= 0.05).\n",
+      "Post-hoc testing not warranted.\n")
+}
+
+# calculating effect size
+kw_result$statistic/(nrow(non0rate_data)-1)
+
+```
+
+# Conclusion
+
+While this data does demonstrate some interesting results that show disparities across New York State counties, we can not say with certainty that these results are soley due to difference between county. Further investigation should hinge on better data collection tools to capture all children within New York State; this only relies on children who are able to go to a medical clinic and perform blood lead level testing. Individuals who are under- or not insured, undocumented, or unable to go to the clinic themselves are not captured within this data.
+
+Furthermore, this data presents a narrative about disparities within pediatric lead, however additional sociodemographic data is needed to better contextualize why some counties might have higher/lower rates. Adding in when specific New York State legislation and major waterworks infrastructural projects were initialized can provide additional context to if and when lead levels are related to environmental, infrastructural, and/or other sources of contamination.
+
+# Shiny App
+
+This data can be further explored by downloading information within [this GitHub repository](https://github.com/cal386/VTPEH-repo). For an interactive way to see between-county differences, [this ShinyApp](https://cal386.shinyapps.io/app-1/) was created for anyone to view and access. Instructions on how to recreate, edit, or access this data using this ShinyApp is also available on GitHub.
+
+[![A screenshot of the ShinyApp: Childhood Blood Lead Levels — New York State (excluding NYC)](images/clipboard-3399042922.png)](https://cal386.shinyapps.io/app-1/)
+
+# **References**
+
+1.  CDC. CDC Updates Blood Lead Reference Value. Childhood Lead Poisoning Prevention. Published April 2, 2024. <https://www.cdc.gov/lead-prevention/php/news-features/updates-blood-lead-reference-value.html>
+2.  New York State Department of Health. Childhood Lead Poisoning Prevention. ny.gov. Accessed February 19, 2026. <https://www.health.ny.gov/environmental/lead/>
+3.  Lead Service Lines in NYC Disproportionately Impact Hispanic/Latino Communities and Children Already At Risk. Columbia University Mailman School of Public Health. Published August 30, 2023. <https://www.publichealth.columbia.edu/news/lead-service-lines-nyc-disproportionately-impact-hispanic-latino-communities-children-already-risk-lead-exposure>
+
+# AI disclosure statement
+
+The author used Claude (Anthropic, claude.ai) as an AI assistant during the preparation of this analysis. AI assistance was used for the following purposes: debugging R code and checking interpretations for statistical output. All statistical analyses were performed in R, and all text was written by the author without gAI input.
